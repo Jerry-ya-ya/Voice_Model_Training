@@ -1,0 +1,7 @@
+torch==2.8.0
+torchaudio==2.8.0
+soundfile>=0.13
+numpy>=1.26,<3
+PyYAML>=6.0
+matplotlib>=3.8
+pytest>=8.0

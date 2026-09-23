@@ -1,0 +1,46 @@
+experiment:
+  name: smoke_test
+  output_dir: runs
+
+data:
+  dataset: manifest
+  root: data/smoke
+  manifest: data/smoke/metadata.csv
+  download: false
+  cache_dir: data/cache/smoke
+  validation_fraction: 0.25
+  max_items: 4
+  num_workers: 0
+
+audio:
+  sample_rate: 22050
+  n_fft: 512
+  win_length: 512
+  hop_length: 128
+  n_mels: 80
+  f_min: 0
+  f_max: 8000
+
+model:
+  hidden_dim: 32
+  encoder_layers: 1
+  decoder_layers: 1
+  attention_heads: 2
+  dropout: 0.0
+  max_mel_frames: 400
+
+training:
+  batch_size: 2
+  learning_rate: 0.001
+  weight_decay: 0.0
+  epochs: 2
+  seed: 42
+  device: cpu
+  grad_clip: 1.0
+  checkpoint_every: 1
+  sample_every: 1
+  duration_loss_weight: 0.1
+  max_steps_per_epoch: 1
+
+vocoder:
+  backend: griffin_lim

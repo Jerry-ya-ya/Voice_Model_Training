@@ -1,0 +1,45 @@
+experiment:
+  name: ljspeech_mvp
+  output_dir: runs
+
+data:
+  dataset: ljspeech
+  root: data/LJSpeech-1.1
+  download: true
+  cache_dir: data/cache/ljspeech
+  validation_fraction: 0.02
+  max_items: null
+  num_workers: 0
+
+audio:
+  sample_rate: 22050
+  n_fft: 1024
+  win_length: 1024
+  hop_length: 256
+  n_mels: 80
+  f_min: 0
+  f_max: 8000
+
+model:
+  hidden_dim: 192
+  encoder_layers: 3
+  decoder_layers: 3
+  attention_heads: 3
+  dropout: 0.1
+  max_mel_frames: 1200
+
+training:
+  batch_size: 16
+  learning_rate: 0.0001
+  weight_decay: 0.000001
+  epochs: 100
+  seed: 42
+  device: auto
+  grad_clip: 1.0
+  checkpoint_every: 1
+  sample_every: 5
+  duration_loss_weight: 0.1
+
+vocoder:
+  backend: hifigan
+

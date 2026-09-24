@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import torch
@@ -23,6 +24,7 @@ class Trainer:
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
         self.global_step = 0
         self.start_epoch = 1
+        self.best_loss = float("inf")
         self.history = []
         experiment = config["experiment"]
         self.run_dir = Path(experiment["output_dir"]) / experiment["name"]
@@ -67,8 +69,37 @@ class Trainer:
 
     def save_checkpoint(self, epoch: int, name: str) -> Path:
         path = self.run_dir / "checkpoints" / name
-        torch.save({"model": self.model.state_dict(), "optimizer": self.optimizer.state_dict(), "scheduler": self.scheduler.state_dict(), "epoch": epoch, "global_step": self.global_step, "config": self.config, "vocab_size": self.tokenizer.vocab_size}, path)
+        torch.save(
+            {
+                "model": self.model.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "scheduler": self.scheduler.state_dict(),
+                "epoch": epoch,
+                "global_step": self.global_step,
+                "best_validation_loss": self.best_loss,
+                "config": self.config,
+                "vocab_size": self.tokenizer.vocab_size,
+            },
+            path,
+        )
         return path
+
+    def _load_existing_history(self) -> None:
+        metrics_path = self.run_dir / "logs" / "metrics.csv"
+        if not metrics_path.is_file():
+            return
+        with metrics_path.open(newline="", encoding="utf-8") as handle:
+            rows = csv.DictReader(handle)
+            self.history = [
+                {
+                    "epoch": int(row["epoch"]),
+                    "global_step": int(row["global_step"]),
+                    "train_loss": float(row["train_loss"]),
+                    "validation_loss": float(row["validation_loss"]),
+                    "learning_rate": float(row["learning_rate"]),
+                }
+                for row in rows
+            ]
 
     def resume(self, path: str | Path) -> None:
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
@@ -78,12 +109,19 @@ class Trainer:
             self.scheduler.load_state_dict(checkpoint["scheduler"])
         self.global_step = int(checkpoint["global_step"])
         self.start_epoch = int(checkpoint["epoch"]) + 1
+        self._load_existing_history()
+        historical_best = min((row["validation_loss"] for row in self.history), default=float("inf"))
+        self.best_loss = float(checkpoint.get("best_validation_loss", historical_best))
         print(f"Resumed {path} at epoch {self.start_epoch}, global step {self.global_step}")
 
     def fit(self) -> Path:
-        best_loss = float("inf")
         best_path = self.run_dir / "checkpoints" / "best.pt"
         epochs = int(self.config["training"]["epochs"])
+        if self.start_epoch > epochs:
+            raise ValueError(
+                f"Checkpoint already completed epoch {self.start_epoch - 1}, but config only requests {epochs} epochs. "
+                "Increase training.epochs or use --continue-train ADDITIONAL_EPOCHS."
+            )
         for epoch in range(self.start_epoch, epochs + 1):
             train_loss = self._run_epoch(self.train_loader, train=True)
             validation_loss = self._run_epoch(self.validation_loader, train=False)
@@ -93,12 +131,12 @@ class Trainer:
             self.history.append(row)
             save_training_plot(self.history, self.run_dir / "plots" / "training.png")
             print(" | ".join(f"{key}={value:.6g}" if isinstance(value, float) else f"{key}={value}" for key, value in row.items()))
-            if validation_loss < best_loss:
-                best_loss = validation_loss
+            self.scheduler.step()
+            if validation_loss < self.best_loss:
+                self.best_loss = validation_loss
                 best_path = self.save_checkpoint(epoch, "best.pt")
             if epoch % int(self.config["training"].get("checkpoint_every", 1)) == 0:
                 self.save_checkpoint(epoch, f"epoch_{epoch:04d}.pt")
             if epoch % int(self.config["training"].get("sample_every", 1)) == 0:
                 self._save_sample(epoch)
-            self.scheduler.step()
         return best_path

@@ -134,6 +134,22 @@ the stored checkpoint epoch when resuming:
 .venv\Scripts\python train.py --config configs/smoke_resume.yaml --resume runs/smoke_test/checkpoints/epoch_0001.pt
 ```
 
+For normal continuation, let the trainer find the highest numbered checkpoint
+and train a requested number of additional epochs automatically:
+
+```powershell
+.venv\Scripts\python train.py --config configs/mvp.yaml --continue-train 10
+```
+
+For example, if `epoch_0100.pt` is the latest checkpoint, this command restores
+the model, optimizer, learning-rate scheduler, global step, prior metrics, and
+best validation loss, then trains epochs 101 through 110. Omitting the number
+adds one epoch:
+
+```powershell
+.venv\Scripts\python train.py --config configs/mvp.yaml --continue-train
+```
+
 Important hyperparameters, device selection (`auto`, `cpu`, or `cuda`), random
 seed, sample cadence, and data limits live in YAML. CUDA is selected by `auto`
 when available.

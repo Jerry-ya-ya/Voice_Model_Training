@@ -15,3 +15,5 @@
 - Add a reproducible GPU benchmark for model throughput, memory, vocoder latency, and real-time factor.
 
 - Add a reusable interactive TTS tester for synthesizing custom sentences from trained checkpoints.
+
+- Add automatic checkpoint continuation with additional-epoch scheduling and preserved training state.

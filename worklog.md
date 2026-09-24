@@ -13,3 +13,5 @@
 ## 2026/09/24
 
 - Add a reproducible GPU benchmark for model throughput, memory, vocoder latency, and real-time factor.
+
+- Add a reusable interactive TTS tester for synthesizing custom sentences from trained checkpoints.

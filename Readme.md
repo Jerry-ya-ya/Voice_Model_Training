@@ -157,6 +157,41 @@ outputs/
 `-- generated_mel.png
 ```
 
+## Interactive TTS tester
+
+Start the interactive tester to load the model once and enter as many custom
+English sentences as you want:
+
+```powershell
+.venv\Scripts\python tts_demo.py --device cuda
+```
+
+The tester automatically prefers `runs/ljspeech_mvp/checkpoints/best.pt` and
+falls back to the smoke checkpoint when the trained model is unavailable. Use
+`q`, `quit`, or `exit` to stop. Each sentence creates a timestamped WAV and Mel
+plot under `demo_outputs/`.
+
+Specify a checkpoint explicitly when needed:
+
+```powershell
+.venv\Scripts\python tts_demo.py `
+  --checkpoint runs/ljspeech_mvp/checkpoints/best.pt `
+  --device cuda `
+  --vocoder hifigan
+```
+
+For a non-interactive single sentence:
+
+```powershell
+.venv\Scripts\python tts_demo.py `
+  --text "Hello, this is my custom sentence." `
+  --device cuda
+```
+
+Repeat `--text` to synthesize multiple sentences in one model-loading session.
+The current character tokenizer supports English text; Chinese text requires a
+future Chinese tokenizer, dataset, and retrained acoustic model.
+
 ## Experiment outputs
 
 ```text

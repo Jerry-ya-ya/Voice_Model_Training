@@ -39,15 +39,60 @@ a full FastSpeech duration aligner while preserving a clean place to add one.
 
 ## Setup
 
-Python 3.11 or 3.13 is recommended. Torch and TorchAudio are pinned together because
-their binary versions must match.
+Python 3.13 is recommended on Windows. Torch and TorchAudio must use matching
+versions. For an NVIDIA GPU, install their CUDA build first, then install the
+remaining project dependencies.
+
+Confirm that Windows can see the NVIDIA GPU:
 
 ```powershell
-py -3.11 -m venv .venv
+nvidia-smi
+```
+
+Create a fresh virtual environment:
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+```
+
+Install the CUDA 12.8 builds of PyTorch and TorchAudio:
+
+```powershell
+.venv\Scripts\python -m pip install `
+  torch==2.8.0 `
+  torchaudio==2.8.0 `
+  --index-url https://download.pytorch.org/whl/cu128
+```
+
+Then install the remaining dependencies. The already installed CUDA packages
+satisfy the pinned Torch requirements and will not be replaced:
+
+```powershell
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-On Linux/macOS, activate or invoke the equivalent `.venv/bin/python`.
+Verify that this exact virtual environment can use the GPU:
+
+```powershell
+.venv\Scripts\python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA build:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
+```
+
+Expected output includes `CUDA available: True` and the NVIDIA GPU name. The
+PyTorch version normally has a suffix such as `2.8.0+cu128`.
+
+The default training configuration uses `device: auto`, which selects CUDA when
+the check above is true and otherwise falls back to CPU. To prevent an
+accidental CPU training run, set this in `configs/mvp.yaml`:
+
+```yaml
+training:
+  device: cuda
+```
+
+With that setting, training stops with a clear error if CUDA is unavailable.
+Linux users can follow the same ordering with `.venv/bin/python`. macOS does
+not support CUDA and requires the CPU path or a future MPS implementation.
 
 ## Dataset and preprocessing
 
@@ -86,7 +131,7 @@ Resume by pointing at any saved checkpoint. Increase `training.epochs` beyond
 the stored checkpoint epoch when resuming:
 
 ```powershell
-.venv\Scripts\python train.py --config configs/smoke-resume.yaml --resume runs/smoke_test/checkpoints/epoch_0001.pt
+.venv\Scripts\python train.py --config configs/smoke_resume.yaml --resume runs/smoke_test/checkpoints/epoch_0001.pt
 ```
 
 Important hyperparameters, device selection (`auto`, `cpu`, or `cuda`), random
@@ -144,6 +189,46 @@ and long training run were not executed as part of the smoke validation.
 
 Tests cover normalization/tokenization, manifest audio preprocessing and cache
 creation, model shapes, loss calculation, and backward propagation.
+
+## Benchmark
+
+Run a repeatable synthetic model benchmark without loading the dataset:
+
+```powershell
+.venv\Scripts\python benchmark.py --config configs/mvp.yaml --device cuda
+```
+
+This reports parameter count, forward latency and throughput, complete training
+step latency, Mel frames per second, and peak CUDA memory. Defaults use a batch
+size of 2, 64 text tokens, 256 Mel frames, 3 warmup iterations, and 10 measured
+iterations. Override them when comparing hardware or configurations:
+
+```powershell
+.venv\Scripts\python benchmark.py `
+  --config configs/mvp.yaml `
+  --device cuda `
+  --batch-size 8 `
+  --token-length 100 `
+  --mel-frames 400 `
+  --warmup 5 `
+  --iterations 50
+```
+
+Provide a trained checkpoint to additionally measure acoustic inference,
+vocoder latency, end-to-end text-to-waveform latency, and real-time factor
+(`RTF = synthesis seconds / generated audio seconds`):
+
+```powershell
+.venv\Scripts\python benchmark.py `
+  --checkpoint runs/ljspeech_mvp/checkpoints/best.pt `
+  --device cuda `
+  --vocoder hifigan `
+  --text "Hello, this is a text to speech benchmark."
+```
+
+An RTF below 1 means synthesis is faster than realtime. Each run also writes a
+machine-readable timestamped report under `benchmarks/`; keep input dimensions
+and iteration counts identical when comparing GPUs or code changes.
 
 ## Known MVP limitations
 

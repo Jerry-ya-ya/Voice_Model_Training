@@ -7,3 +7,9 @@
 ## 2026/09/23
 
 - Build and verify a complete modular PyTorch TTS MVP with LJSpeech support, checkpointed training, and HiFi-GAN inference.
+
+- Document the CUDA-first Windows setup and GPU verification workflow.
+
+## 2026/09/24
+
+- Add a reproducible GPU benchmark for model throughput, memory, vocoder latency, and real-time factor.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import time
 from pathlib import Path
 
 import torch
@@ -8,7 +9,24 @@ import torch
 from src.models.vocoder import Vocoder
 from src.training.losses import acoustic_loss
 from src.utils.config import save_config
-from src.utils.io import append_metrics, save_mel_plot, save_training_plot, save_waveform
+from src.utils.io import append_metrics, format_duration, save_mel_plot, save_training_plot, save_waveform
+
+
+def summarize_epoch_timings(history: list[dict]) -> dict | None:
+    measured = [
+        (int(row["epoch"]), float(row["epoch_seconds"]))
+        for row in history
+        if row.get("epoch_seconds") not in (None, "")
+    ]
+    if not measured:
+        return None
+    longest_epoch, longest_seconds = max(measured, key=lambda item: item[1])
+    return {
+        "count": len(measured),
+        "average_seconds": sum(seconds for _, seconds in measured) / len(measured),
+        "longest_epoch": longest_epoch,
+        "longest_seconds": longest_seconds,
+    }
 
 
 class Trainer:
@@ -93,16 +111,19 @@ class Trainer:
             return
         with metrics_path.open(newline="", encoding="utf-8") as handle:
             rows = csv.DictReader(handle)
-            self.history = [
-                {
+            self.history = []
+            for row in rows:
+                parsed = {
                     "epoch": int(row["epoch"]),
                     "global_step": int(row["global_step"]),
                     "train_loss": float(row["train_loss"]),
                     "validation_loss": float(row["validation_loss"]),
                     "learning_rate": float(row["learning_rate"]),
                 }
-                for row in rows
-            ]
+                for key in ("train_seconds", "validation_seconds", "epoch_seconds"):
+                    if row.get(key) not in (None, ""):
+                        parsed[key] = float(row[key])
+                self.history.append(parsed)
 
     def resume(self, path: str | Path, learning_rate_override: float | None = None) -> None:
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
@@ -125,6 +146,7 @@ class Trainer:
         print(f"Resumed {path} at epoch {self.start_epoch}, global step {self.global_step}, learning rate {learning_rate:.6g}")
 
     def fit(self) -> Path:
+        session_started = time.perf_counter()
         best_path = self.run_dir / "checkpoints" / "best.pt"
         epochs = int(self.config["training"]["epochs"])
         if self.start_epoch > epochs:
@@ -133,14 +155,44 @@ class Trainer:
                 "Increase training.epochs or use --continue-train ADDITIONAL_EPOCHS."
             )
         for epoch in range(self.start_epoch, epochs + 1):
+            train_started = time.perf_counter()
             train_loss = self._run_epoch(self.train_loader, train=True)
+            train_seconds = time.perf_counter() - train_started
+            validation_started = time.perf_counter()
             validation_loss = self._run_epoch(self.validation_loader, train=False)
+            validation_seconds = time.perf_counter() - validation_started
+            epoch_seconds = train_seconds + validation_seconds
             learning_rate = self.optimizer.param_groups[0]["lr"]
-            row = {"epoch": epoch, "global_step": self.global_step, "train_loss": train_loss, "validation_loss": validation_loss, "learning_rate": learning_rate}
+            row = {
+                "epoch": epoch,
+                "global_step": self.global_step,
+                "train_loss": train_loss,
+                "validation_loss": validation_loss,
+                "learning_rate": learning_rate,
+                "train_seconds": train_seconds,
+                "validation_seconds": validation_seconds,
+                "epoch_seconds": epoch_seconds,
+            }
             append_metrics(self.run_dir / "logs" / "metrics.csv", row)
             self.history.append(row)
             save_training_plot(self.history, self.run_dir / "plots" / "training.png")
-            print(" | ".join(f"{key}={value:.6g}" if isinstance(value, float) else f"{key}={value}" for key, value in row.items()))
+            print(
+                " | ".join(
+                    f"{key}={value:.6g}" if isinstance(value, float) else f"{key}={value}"
+                    for key, value in row.items()
+                    if not key.endswith("_seconds")
+                )
+            )
+            timing = summarize_epoch_timings(self.history)
+            if timing is not None:
+                print(
+                    "timing"
+                    f" | train={format_duration(train_seconds)}"
+                    f" | validation={format_duration(validation_seconds)}"
+                    f" | epoch={format_duration(epoch_seconds)}"
+                    f" | average_epoch={format_duration(timing['average_seconds'])}"
+                    f" | longest_epoch={timing['longest_epoch']} ({format_duration(timing['longest_seconds'])})"
+                )
             self.scheduler.step()
             if validation_loss < self.best_loss:
                 self.best_loss = validation_loss
@@ -149,4 +201,14 @@ class Trainer:
                 self.save_checkpoint(epoch, f"epoch_{epoch:04d}.pt")
             if epoch % int(self.config["training"].get("sample_every", 1)) == 0:
                 self._save_sample(epoch)
+        session_seconds = time.perf_counter() - session_started
+        timing = summarize_epoch_timings(self.history)
+        if timing is not None:
+            print(
+                "Training timing summary"
+                f" | session={format_duration(session_seconds)}"
+                f" | measured_epochs={timing['count']}"
+                f" | average_epoch={format_duration(timing['average_seconds'])}"
+                f" | longest_epoch={timing['longest_epoch']} ({format_duration(timing['longest_seconds'])})"
+            )
         return best_path

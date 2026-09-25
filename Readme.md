@@ -301,8 +301,15 @@ runs/<experiment_name>/
 ```
 
 Each metrics row records epoch, global step, training loss, validation loss,
-and learning rate; `plots/training.png` graphs those histories. Checkpoints include the model, optimizer, scheduler,
-configuration, epoch, and global step.
+learning rate, training time, validation time, and total measured epoch time.
+During training, the console also shows the running average epoch time and the
+slowest epoch so far. The final timing summary reports the wall-clock duration
+of the current training session. Measured epoch time covers training and
+validation; the session duration also includes plot, checkpoint, and sample
+generation overhead. Older metrics files are upgraded automatically when a
+continued run writes its first timed epoch. `plots/training.png` graphs the loss
+and learning-rate histories. Checkpoints include the model, optimizer,
+scheduler, configuration, epoch, and global step.
 
 ## Validation performed for this repository
 

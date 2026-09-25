@@ -25,3 +25,7 @@
 - Add verified small, medium, and large LJSpeech training presets with configurable learning-rate decay.
 
 - Redesign the training CLI with scanned arrow-key config selection and numbered per-config run directories.
+
+## 2026/09/26
+
+- Add persistent epoch timing with running averages and longest-epoch reporting to training.

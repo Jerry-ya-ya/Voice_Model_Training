@@ -51,15 +51,42 @@ def save_waveform(waveform: torch.Tensor, path: str | Path, sample_rate: int) ->
     torchaudio.save(str(path), waveform, sample_rate)
 
 
+def format_duration(seconds: float) -> str:
+    """Format elapsed seconds as HH:MM:SS.ss."""
+    seconds = max(float(seconds), 0.0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, remaining_seconds = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{remaining_seconds:05.2f}"
+
+
 def append_metrics(path: str | Path, row: dict) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not path.exists()
-    with path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(row))
-        if write_header:
+    if not path.exists() or path.stat().st_size == 0:
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(row))
             writer.writeheader()
-        writer.writerow(row)
+            writer.writerow(row)
+        return
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        existing_fields = list(reader.fieldnames or [])
+        existing_rows = list(reader)
+
+    fieldnames = existing_fields + [key for key in row if key not in existing_fields]
+    if fieldnames != existing_fields:
+        temporary_path = path.with_suffix(path.suffix + ".tmp")
+        with temporary_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(existing_rows)
+            writer.writerow(row)
+        temporary_path.replace(path)
+        return
+
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=fieldnames).writerow(row)
 
 
 def save_training_plot(history: list[dict], path: str | Path) -> None:

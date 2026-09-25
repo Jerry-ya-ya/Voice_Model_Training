@@ -141,6 +141,40 @@ runs/<experiment_name>/launch_configs/
 
 The direct commands below remain available for scripts and automation.
 
+### LJSpeech model presets
+
+Three production-shaped presets are included. They share the same 22.05 kHz,
+80-bin HiFi-GAN-compatible Mel configuration, and expect the extracted dataset
+at `data/LJSpeech-1.1`.
+
+| Preset | Parameters | Hidden size | Encoder + decoder layers | Batch | Epochs | Intended use |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ljspeech_small.yaml` | 0.11 M | 64 | 1 + 1 | 4 | 60 | Lowest-load experiments and pipeline checks |
+| `ljspeech_medium.yaml` | 0.83 M | 128 | 2 + 2 | 4 | 100 | Conservative everyday training |
+| `ljspeech_large.yaml` | 6.42 M | 256 | 4 + 4 | 2 | 150 | Higher capacity with controlled batch memory |
+
+These reduced presets write to `ljspeech_small_v2`, `ljspeech_medium_v2`, and
+`ljspeech_large_v2` run directories. The separate names prevent incompatible
+new architectures from overwriting checkpoints produced by earlier presets.
+
+Start one directly:
+
+```powershell
+.venv\Scripts\python train.py --config configs/ljspeech_medium.yaml
+```
+
+Or launch `cli.py`, choose **new training**, and enter one of these files as
+the base configuration. If CUDA runs out of memory on unusually long batches,
+reduce `training.batch_size` first. Checkpoints are less frequent in the large
+preset to avoid consuming excessive disk space.
+
+All three presets were verified on an RTX 4070 SUPER with CUDA 12.8 using
+forward and complete optimizer-step benchmarks at 1,000 Mel frames. Actual
+memory use still varies with the longest utterance in each padded batch. GPU
+compute utilization can still briefly reach 100% because training deliberately
+uses available compute; these smaller presets primarily reduce work per step,
+memory pressure, sustained power use, and total training time.
+
 Full LJSpeech training:
 
 ```powershell

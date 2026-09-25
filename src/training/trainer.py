@@ -21,7 +21,10 @@ class Trainer:
         self.device = device
         training = config["training"]
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=float(training["learning_rate"]), weight_decay=float(training.get("weight_decay", 0)))
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            self.optimizer,
+            gamma=float(training.get("lr_decay", 0.98)),
+        )
         self.global_step = 0
         self.start_epoch = 1
         self.best_loss = float("inf")

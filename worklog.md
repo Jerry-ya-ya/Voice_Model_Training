@@ -21,3 +21,5 @@
 ## 2026/09/25
 
 - Add an interactive CLI menu for configurable new and continued TTS training runs.
+
+- Add verified small, medium, and large LJSpeech training presets with configurable learning-rate decay.

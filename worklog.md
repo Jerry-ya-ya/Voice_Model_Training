@@ -17,3 +17,7 @@
 - Add a reusable interactive TTS tester for synthesizing custom sentences from trained checkpoints.
 
 - Add automatic checkpoint continuation with additional-epoch scheduling and preserved training state.
+
+## 2026/09/25
+
+- Add an interactive CLI menu for configurable new and continued TTS training runs.

@@ -114,6 +114,33 @@ Mel extraction, caching, splitting, and padding remain unchanged.
 
 ## Training
 
+### Interactive CLI menu
+
+The easiest way to start or continue training is the interactive menu:
+
+```powershell
+.venv\Scripts\python cli.py
+```
+
+Choose **new training** to select the base YAML, experiment name, dataset path,
+device, epochs, batch size, learning rate, data limit, steps per epoch, random
+seed, workers, and checkpoint/sample cadence. The menu refuses to overwrite an
+experiment that already has checkpoints.
+
+Choose **continue training** to select an existing experiment and its latest
+epoch checkpoint. For every new round you can choose additional epochs, device,
+batch size, data/step limits, and whether to preserve or explicitly reset the
+checkpoint learning rate. Model, optimizer, scheduler, global step, metrics,
+and best validation loss are restored automatically.
+
+Every confirmed launch saves the exact choices under:
+
+```text
+runs/<experiment_name>/launch_configs/
+```
+
+The direct commands below remain available for scripts and automation.
+
 Full LJSpeech training:
 
 ```powershell

@@ -101,18 +101,25 @@ class Trainer:
                 for row in rows
             ]
 
-    def resume(self, path: str | Path) -> None:
+    def resume(self, path: str | Path, learning_rate_override: float | None = None) -> None:
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["model"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         if checkpoint.get("scheduler"):
             self.scheduler.load_state_dict(checkpoint["scheduler"])
+        if learning_rate_override is not None:
+            for group in self.optimizer.param_groups:
+                group["lr"] = learning_rate_override
+            self.scheduler.base_lrs = [learning_rate_override for _ in self.optimizer.param_groups]
+            self.scheduler._last_lr = [learning_rate_override for _ in self.optimizer.param_groups]
+            self.config["training"]["learning_rate"] = learning_rate_override
         self.global_step = int(checkpoint["global_step"])
         self.start_epoch = int(checkpoint["epoch"]) + 1
         self._load_existing_history()
         historical_best = min((row["validation_loss"] for row in self.history), default=float("inf"))
         self.best_loss = float(checkpoint.get("best_validation_loss", historical_best))
-        print(f"Resumed {path} at epoch {self.start_epoch}, global step {self.global_step}")
+        learning_rate = self.optimizer.param_groups[0]["lr"]
+        print(f"Resumed {path} at epoch {self.start_epoch}, global step {self.global_step}, learning rate {learning_rate:.6g}")
 
     def fit(self) -> Path:
         best_path = self.run_dir / "checkpoints" / "best.pt"

@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
         metavar="ADDITIONAL_EPOCHS",
         help="Auto-resume the latest checkpoint and train more epochs (default: 1)",
     )
+    parser.add_argument(
+        "--resume-learning-rate",
+        type=positive_float,
+        default=None,
+        help="Explicitly replace the restored optimizer learning rate",
+    )
     return parser.parse_args()
 
 
@@ -31,6 +37,13 @@ def positive_integer(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
     return parsed
 
 
@@ -50,6 +63,8 @@ def prepare_continuation(config: dict, additional_epochs: int) -> Path:
 
 def main() -> None:
     args = parse_args()
+    if args.resume_learning_rate is not None and args.resume is None and args.continue_train is None:
+        raise ValueError("--resume-learning-rate requires --resume or --continue-train")
     config = load_config(args.config)
     resume_path = args.resume
     if args.continue_train is not None:
@@ -61,7 +76,7 @@ def main() -> None:
     model = AcousticModel(tokenizer.vocab_size, int(config["audio"]["n_mels"]), config["model"])
     trainer = Trainer(model, train_loader, validation_loader, config, tokenizer, device)
     if resume_path:
-        trainer.resume(resume_path)
+        trainer.resume(resume_path, learning_rate_override=args.resume_learning_rate)
     print(f"Device: {device} | train batches: {len(train_loader)} | validation batches: {len(validation_loader)}")
     print(f"Best checkpoint: {trainer.fit()}")
 

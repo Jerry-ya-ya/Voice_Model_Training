@@ -1,12 +1,14 @@
-"""Interactive menu for starting and continuing TTS training runs."""
+"""Arrow-key menu for starting and continuing organized TTS training runs."""
 
 from __future__ import annotations
 
 import copy
+import os
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import TypeVar
 
 import torch
 
@@ -15,6 +17,8 @@ from src.utils.config import load_config, save_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+CONFIG_DIR = PROJECT_ROOT / "configs"
+T = TypeVar("T")
 
 
 def configure_console_encoding() -> None:
@@ -24,6 +28,83 @@ def configure_console_encoding() -> None:
             sys.stdout.reconfigure(encoding="utf-8")
         if hasattr(sys.stdin, "reconfigure"):
             sys.stdin.reconfigure(encoding="utf-8")
+
+
+def _is_interactive_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _read_arrow_key() -> str:
+    if os.name == "nt":
+        import msvcrt
+
+        key = msvcrt.getwch()
+        if key in {"\x00", "\xe0"}:
+            return {"H": "up", "P": "down"}.get(msvcrt.getwch(), "other")
+        if key == "\r":
+            return "enter"
+        if key == "\x1b":
+            return "escape"
+        return "other"
+
+    import termios
+    import tty
+
+    descriptor = sys.stdin.fileno()
+    previous = termios.tcgetattr(descriptor)
+    try:
+        tty.setraw(descriptor)
+        key = sys.stdin.read(1)
+        if key == "\x1b":
+            sequence = sys.stdin.read(2)
+            return {"[A": "up", "[B": "down"}.get(sequence, "escape")
+        if key in {"\r", "\n"}:
+            return "enter"
+        return "other"
+    finally:
+        termios.tcsetattr(descriptor, termios.TCSADRAIN, previous)
+
+
+def select_menu(title: str, options: list[tuple[str, T]], default_index: int = 0) -> T:
+    """Select with arrow keys; use a numbered fallback for redirected input/tests."""
+    if not options:
+        raise ValueError(f"{title} 沒有可選項目")
+    index = min(max(default_index, 0), len(options) - 1)
+    if not _is_interactive_terminal():
+        print(f"\n{title}：")
+        for option_index, (label, _) in enumerate(options, start=1):
+            print(f"  {option_index}. {label}")
+        while True:
+            value = input(f"請選擇 [1-{len(options)}]（預設 {index + 1}）: ").strip()
+            if not value:
+                return options[index][1]
+            try:
+                selected = int(value) - 1
+                if 0 <= selected < len(options):
+                    return options[selected][1]
+            except ValueError:
+                pass
+            print("沒有這個選項。")
+
+    last_width = 0
+    while True:
+        label = options[index][0]
+        line = f"{title}（↑/↓ 選擇，Enter 確認）: ▶ {label}"
+        padding = " " * max(last_width - len(line), 0)
+        sys.stdout.write(f"\r{line}{padding}")
+        sys.stdout.flush()
+        last_width = max(last_width, len(line))
+        key = _read_arrow_key()
+        if key == "up":
+            index = (index - 1) % len(options)
+        elif key == "down":
+            index = (index + 1) % len(options)
+        elif key == "enter":
+            print()
+            return options[index][1]
+        elif key == "escape":
+            print()
+            return options[-1][1]
 
 
 def ask_text(label: str, default: str | None = None) -> str:
@@ -73,66 +154,88 @@ def ask_optional_int(label: str, current: int | None) -> int | None:
             print("請輸入正整數或 none。")
 
 
-def ask_choice(label: str, choices: tuple[str, ...], default: str) -> str:
-    while True:
-        value = ask_text(f"{label} ({'/'.join(choices)})", default).lower()
-        if value in choices:
-            return value
-        print(f"請選擇：{', '.join(choices)}")
-
-
 def ask_yes_no(label: str, default: bool = True) -> bool:
-    marker = "Y/n" if default else "y/N"
-    while True:
-        value = input(f"{label} [{marker}]: ").strip().lower()
-        if not value:
-            return default
-        if value in {"y", "yes"}:
-            return True
-        if value in {"n", "no"}:
-            return False
-        print("請輸入 y 或 n。")
+    options = [("是", True), ("否", False)] if default else [("否", False), ("是", True)]
+    return select_menu(label, options)
 
 
-def discover_runs(output_dir: str | Path = "runs") -> list[Path]:
-    root = Path(output_dir)
+def scan_configs(config_dir: str | Path = CONFIG_DIR) -> list[Path]:
+    root = Path(config_dir)
+    if not root.is_dir():
+        return []
+    return sorted((*root.glob("*.yaml"), *root.glob("*.yml")), key=lambda path: path.name.lower())
+
+
+def config_label(path: Path) -> str:
+    try:
+        config = load_config(path)
+        model = config["model"]
+        training = config["training"]
+        return (
+            f"{path.name} — hidden {model['hidden_dim']}, "
+            f"layers {model['encoder_layers']}+{model['decoder_layers']}, batch {training['batch_size']}"
+        )
+    except (KeyError, TypeError):
+        return path.name
+
+
+def choose_config() -> Path | None:
+    configs = scan_configs()
+    options = [(config_label(path), path) for path in configs]
+    options.append(("返回", None))
+    return select_menu("選擇 Config", options)
+
+
+def category_directory(config_path: Path, config: dict) -> Path:
+    output_root = Path(config["experiment"].get("output_dir", "runs"))
+    if not output_root.is_absolute():
+        output_root = PROJECT_ROOT / output_root
+    return output_root / config_path.stem
+
+
+def numbered_run_directories(category_dir: str | Path, require_checkpoint: bool = True) -> list[Path]:
+    root = Path(category_dir)
     if not root.is_dir():
         return []
     runs = []
-    for path in sorted((item for item in root.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
-        if not (path / "config.yaml").is_file():
+    for path in root.iterdir():
+        if not path.is_dir() or not path.name.isdigit() or int(path.name) < 1:
             continue
-        try:
-            find_latest_checkpoint(path)
-        except FileNotFoundError:
-            continue
+        if require_checkpoint:
+            try:
+                find_latest_checkpoint(path)
+            except FileNotFoundError:
+                continue
         runs.append(path)
-    return runs
+    return sorted(runs, key=lambda path: int(path.name))
 
 
-def choose_run(runs: list[Path]) -> Path | None:
+def next_run_number(category_dir: str | Path) -> int:
+    existing = numbered_run_directories(category_dir, require_checkpoint=False)
+    return max((int(path.name) for path in existing), default=0) + 1
+
+
+def choose_numbered_run(category_dir: Path) -> Path | None:
+    runs = numbered_run_directories(category_dir)
     if not runs:
-        print("找不到可以接續的實驗 checkpoint。")
+        print(f"{category_dir} 尚無可接續的訓練。")
         return None
-    print("\n可接續的實驗：")
-    for index, run_dir in enumerate(runs, start=1):
+    options = []
+    for run_dir in runs:
         latest = find_latest_checkpoint(run_dir)
-        print(f"  {index}. {run_dir.name} — {latest.name}")
-    print("  0. 返回")
-    while True:
-        selection = ask_int("選擇實驗", 1, minimum=0)
-        if selection == 0:
-            return None
-        if selection <= len(runs):
-            return runs[selection - 1]
-        print("沒有這個選項。")
+        options.append((f"第 {run_dir.name} 次訓練 — {latest.name}", run_dir))
+    options.append(("返回", None))
+    return select_menu(f"{category_dir.name}：選擇訓練編號", options)
 
 
 def configure_runtime(config: dict, *, new_training: bool) -> dict:
     configured = copy.deepcopy(config)
     training = configured["training"]
     data = configured["data"]
-    training["device"] = ask_choice("運算裝置", ("auto", "cuda", "cpu"), str(training.get("device", "auto")))
+    devices = [("自動選擇", "auto"), ("CUDA GPU", "cuda"), ("CPU", "cpu")]
+    default_device = str(training.get("device", "auto"))
+    default_index = next((i for i, (_, value) in enumerate(devices) if value == default_device), 0)
+    training["device"] = select_menu("運算裝置", devices, default_index)
     training["batch_size"] = ask_int("Batch size", int(training["batch_size"]))
     training["seed"] = ask_int("Random seed", int(training.get("seed", 42)), minimum=0)
     training["max_steps_per_epoch"] = ask_optional_int(
@@ -150,7 +253,7 @@ def configure_runtime(config: dict, *, new_training: bool) -> dict:
 
 def save_launch_config(config: dict, mode: str) -> Path:
     experiment = config["experiment"]
-    run_dir = Path(experiment["output_dir"]) / experiment["name"]
+    run_dir = Path(experiment["output_dir"]) / str(experiment["name"])
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     path = run_dir / "launch_configs" / f"{mode}_{timestamp}.yaml"
     save_config(config, path)
@@ -171,11 +274,13 @@ def build_training_command(
     return command
 
 
-def print_summary(config: dict, *, additional_epochs: int | None, learning_rate_override: float | None) -> None:
+def print_summary(config: dict, *, category: str, additional_epochs: int | None, learning_rate_override: float | None) -> None:
     training = config["training"]
     data = config["data"]
     print("\n本次設定摘要")
-    print(f"  實驗：{config['experiment']['name']}")
+    print(f"  Config 分類：{category}")
+    print(f"  第幾次訓練：{config['experiment']['name']}")
+    print(f"  輸出：{Path(config['experiment']['output_dir']) / str(config['experiment']['name'])}")
     print(f"  Device：{training['device']}")
     print(f"  Batch size：{training['batch_size']}")
     print(f"  Epochs：{additional_epochs if additional_epochs is not None else training['epochs']}")
@@ -184,8 +289,20 @@ def print_summary(config: dict, *, additional_epochs: int | None, learning_rate_
     print(f"  Max steps/epoch：{training.get('max_steps_per_epoch') or '不限'}")
 
 
-def launch(config: dict, mode: str, *, additional_epochs: int | None = None, resume_learning_rate: float | None = None) -> None:
-    print_summary(config, additional_epochs=additional_epochs, learning_rate_override=resume_learning_rate)
+def launch(
+    config: dict,
+    mode: str,
+    *,
+    category: str,
+    additional_epochs: int | None = None,
+    resume_learning_rate: float | None = None,
+) -> None:
+    print_summary(
+        config,
+        category=category,
+        additional_epochs=additional_epochs,
+        learning_rate_override=resume_learning_rate,
+    )
     if not ask_yes_no("確認開始訓練？", default=True):
         print("已取消。")
         return
@@ -201,26 +318,29 @@ def launch(config: dict, mode: str, *, additional_epochs: int | None = None, res
 
 
 def new_training() -> None:
-    config_path = Path(ask_text("基礎設定檔", "configs/mvp.yaml"))
-    config = load_config(config_path)
-    experiment = config["experiment"]
-    experiment["name"] = ask_text("實驗名稱", str(experiment["name"]))
-    config["data"]["root"] = ask_text("資料集路徑", str(config["data"]["root"]))
-    run_dir = Path(experiment["output_dir"]) / experiment["name"]
-    try:
-        existing = find_latest_checkpoint(run_dir)
-    except FileNotFoundError:
-        existing = None
-    if existing:
-        print(f"此實驗已有 checkpoint：{existing}")
-        print("為避免覆寫，請使用『再次訓練』或輸入新的實驗名稱。")
+    config_path = choose_config()
+    if config_path is None:
         return
+    config = load_config(config_path)
+    category = config_path.stem
+    category_dir = category_directory(config_path, config)
+    run_number = next_run_number(category_dir)
+    config["experiment"]["output_dir"] = str(category_dir)
+    config["experiment"]["name"] = str(run_number)
+    config["experiment"]["source_config"] = str(config_path)
+    config["experiment"]["run_number"] = run_number
+    config["data"]["root"] = ask_text("資料集路徑", str(config["data"]["root"]))
     configured = configure_runtime(config, new_training=True)
-    launch(configured, "new")
+    launch(configured, "new", category=category)
 
 
 def continue_training() -> None:
-    run_dir = choose_run(discover_runs())
+    config_path = choose_config()
+    if config_path is None:
+        return
+    base_config = load_config(config_path)
+    category = config_path.stem
+    run_dir = choose_numbered_run(category_directory(config_path, base_config))
     if run_dir is None:
         return
     config = load_config(run_dir / "config.yaml")
@@ -239,6 +359,7 @@ def continue_training() -> None:
     launch(
         configured,
         "continue",
+        category=category,
         additional_epochs=additional_epochs,
         resume_learning_rate=learning_rate_override,
     )
@@ -246,22 +367,22 @@ def continue_training() -> None:
 
 def main() -> None:
     configure_console_encoding()
+    options = [
+        ("全新訓練", "new"),
+        ("再次訓練（接續指定 Config／訓練編號）", "continue"),
+        ("離開", "exit"),
+    ]
     while True:
         print("\nVoice Model Training CLI")
-        print("  1. 全新訓練")
-        print("  2. 再次訓練（接續最新 checkpoint）")
-        print("  3. 離開")
-        choice = ask_text("請選擇", "1")
+        choice = select_menu("主選單", options)
         try:
-            if choice == "1":
+            if choice == "new":
                 new_training()
-            elif choice == "2":
+            elif choice == "continue":
                 continue_training()
-            elif choice == "3":
+            else:
                 print("已離開。")
                 return
-            else:
-                print("沒有這個選項。")
         except (FileNotFoundError, KeyError, ValueError, subprocess.CalledProcessError) as error:
             print(f"操作失敗：{error}")
         except KeyboardInterrupt:

@@ -116,28 +116,47 @@ Mel extraction, caching, splitting, and padding remain unchanged.
 
 ### Interactive CLI menu
 
-The easiest way to start or continue training is the interactive menu:
+The easiest way to start or continue training is the arrow-key menu:
 
 ```powershell
 .venv\Scripts\python cli.py
 ```
 
-Choose **new training** to select the base YAML, experiment name, dataset path,
-device, epochs, batch size, learning rate, data limit, steps per epoch, random
-seed, workers, and checkpoint/sample cadence. The menu refuses to overwrite an
-experiment that already has checkpoints.
+The menu scans every `configs/*.yaml` and `configs/*.yml` file automatically.
+Use the Up/Down arrow keys and Enter to choose a config; no config path needs to
+be typed. Device and confirmation prompts also use arrow-key selection.
 
-Choose **continue training** to select an existing experiment and its latest
-epoch checkpoint. For every new round you can choose additional epochs, device,
-batch size, data/step limits, and whether to preserve or explicitly reset the
-checkpoint learning rate. Model, optimizer, scheduler, global step, metrics,
-and best validation loss are restored automatically.
-
-Every confirmed launch saves the exact choices under:
+Choose **new training** to create the next positive run number inside the
+selected config category. For example, the first three runs started from
+`ljspeech_small.yaml` are organized as:
 
 ```text
-runs/<experiment_name>/launch_configs/
+runs/
+`-- ljspeech_small/
+    |-- 1/
+    |-- 2/
+    `-- 3/
 ```
+
+Each numbered directory is a completely independent training run containing
+its own checkpoints, logs, samples, plots, resolved config, and launch configs.
+
+Choose **continue training** to first select the config category and then select
+the numbered run to resume. The CLI restores that run's latest epoch checkpoint,
+model, optimizer, scheduler, global step, metrics, and best validation loss.
+For every continuation round you can choose additional epochs, device, batch
+size, data/step limits, and whether to preserve or explicitly reset the
+checkpoint learning rate.
+
+Every confirmed launch saves the exact choices under the selected numbered run:
+
+```text
+runs/<config_name>/<positive_run_number>/launch_configs/
+```
+
+Legacy flat runs such as `runs/ljspeech_mvp/` are left untouched and are not
+automatically moved into numbered categories. They remain resumable with the
+direct `--resume` command.
 
 The direct commands below remain available for scripts and automation.
 

@@ -23,3 +23,5 @@
 - Add an interactive CLI menu for configurable new and continued TTS training runs.
 
 - Add verified small, medium, and large LJSpeech training presets with configurable learning-rate decay.
+
+- Redesign the training CLI with scanned arrow-key config selection and numbered per-config run directories.

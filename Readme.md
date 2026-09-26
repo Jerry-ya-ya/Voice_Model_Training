@@ -143,12 +143,16 @@ its own checkpoints, logs, samples, plots, resolved config, and launch configs.
 
 Choose **continue training** to first select the config category and then select
 the numbered run to resume. The CLI restores that run's latest epoch checkpoint,
-model, optimizer, scheduler, global step, metrics, and best validation loss.
-For every continuation round you can choose additional epochs, device, batch
-size, data/step limits, and whether to preserve or explicitly reset the
-checkpoint learning rate.
+model, optimizer, scheduler, global step, and best validation loss, but writes
+the continued training into the category's next unused positive run number. For
+example, continuing run `1` creates run `2`; if runs `1` through `3` already
+exist, either a new training or a continuation creates run `4`. The source run
+is never overwritten. Each continuation config records its parent run number
+and source checkpoint. For every continuation round you can choose additional
+epochs, device, batch size, data/step limits, and whether to preserve or
+explicitly reset the checkpoint learning rate.
 
-Every confirmed launch saves the exact choices under the selected numbered run:
+Every confirmed launch saves the exact choices under the newly created numbered run:
 
 ```text
 runs/<config_name>/<positive_run_number>/launch_configs/

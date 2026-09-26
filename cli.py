@@ -263,23 +263,37 @@ def save_launch_config(config: dict, mode: str) -> Path:
 def build_training_command(
     config_path: str | Path,
     *,
+    resume_checkpoint: str | Path | None = None,
     additional_epochs: int | None = None,
     resume_learning_rate: float | None = None,
 ) -> list[str]:
+    if resume_checkpoint is not None and additional_epochs is not None:
+        raise ValueError("resume_checkpoint and additional_epochs cannot be used together")
     command = [sys.executable, str(PROJECT_ROOT / "train.py"), "--config", str(config_path)]
-    if additional_epochs is not None:
+    if resume_checkpoint is not None:
+        command.extend(["--resume", str(resume_checkpoint)])
+    elif additional_epochs is not None:
         command.extend(["--continue-train", str(additional_epochs)])
     if resume_learning_rate is not None:
         command.extend(["--resume-learning-rate", str(resume_learning_rate)])
     return command
 
 
-def print_summary(config: dict, *, category: str, additional_epochs: int | None, learning_rate_override: float | None) -> None:
+def print_summary(
+    config: dict,
+    *,
+    category: str,
+    additional_epochs: int | None,
+    learning_rate_override: float | None,
+    source_run: Path | None = None,
+) -> None:
     training = config["training"]
     data = config["data"]
     print("\n本次設定摘要")
     print(f"  Config 分類：{category}")
-    print(f"  第幾次訓練：{config['experiment']['name']}")
+    if source_run is not None:
+        print(f"  接續來源：第 {source_run.name} 次訓練")
+    print(f"  本次輸出編號：第 {config['experiment']['name']} 次訓練")
     print(f"  輸出：{Path(config['experiment']['output_dir']) / str(config['experiment']['name'])}")
     print(f"  Device：{training['device']}")
     print(f"  Batch size：{training['batch_size']}")
@@ -296,12 +310,15 @@ def launch(
     category: str,
     additional_epochs: int | None = None,
     resume_learning_rate: float | None = None,
+    resume_checkpoint: Path | None = None,
+    source_run: Path | None = None,
 ) -> None:
     print_summary(
         config,
         category=category,
         additional_epochs=additional_epochs,
         learning_rate_override=resume_learning_rate,
+        source_run=source_run,
     )
     if not ask_yes_no("確認開始訓練？", default=True):
         print("已取消。")
@@ -309,7 +326,7 @@ def launch(
     config_path = save_launch_config(config, mode)
     command = build_training_command(
         config_path,
-        additional_epochs=additional_epochs,
+        resume_checkpoint=resume_checkpoint,
         resume_learning_rate=resume_learning_rate,
     )
     print(f"設定已保存：{config_path}", flush=True)
@@ -340,15 +357,23 @@ def continue_training() -> None:
         return
     base_config = load_config(config_path)
     category = config_path.stem
-    run_dir = choose_numbered_run(category_directory(config_path, base_config))
-    if run_dir is None:
+    category_dir = category_directory(config_path, base_config)
+    source_run = choose_numbered_run(category_dir)
+    if source_run is None:
         return
-    config = load_config(run_dir / "config.yaml")
-    latest = find_latest_checkpoint(run_dir)
+    config = load_config(source_run / "config.yaml")
+    latest = find_latest_checkpoint(source_run)
     checkpoint = torch.load(latest, map_location="cpu", weights_only=False)
     print(f"\n最新 checkpoint：{latest}")
     print(f"已完成 epoch：{checkpoint['epoch']} | global step：{checkpoint['global_step']}")
     additional_epochs = ask_int("這一輪要再訓練幾個 epochs", 10)
+    destination_number = next_run_number(category_dir)
+    config["experiment"]["output_dir"] = str(category_dir)
+    config["experiment"]["name"] = str(destination_number)
+    config["experiment"]["run_number"] = destination_number
+    config["experiment"]["parent_run_number"] = int(source_run.name)
+    config["experiment"]["resume_checkpoint"] = str(latest)
+    config["training"]["epochs"] = int(checkpoint["epoch"]) + additional_epochs
     configured = configure_runtime(config, new_training=False)
     learning_rate_override = None
     restored_lr = float(checkpoint["optimizer"]["param_groups"][0]["lr"])
@@ -362,6 +387,8 @@ def continue_training() -> None:
         category=category,
         additional_epochs=additional_epochs,
         resume_learning_rate=learning_rate_override,
+        resume_checkpoint=latest,
+        source_run=source_run,
     )
 
 

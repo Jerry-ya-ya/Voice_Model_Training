@@ -1,9 +1,12 @@
 import sys
+from copy import deepcopy
 from pathlib import Path
 
+import cli
 from cli import (
     ask_int,
     build_training_command,
+    continue_training,
     next_run_number,
     numbered_run_directories,
     print_summary,
@@ -48,6 +51,52 @@ def test_build_continue_command() -> None:
     command = build_training_command("runtime.yaml", additional_epochs=5, resume_learning_rate=2e-5)
     assert command[0] == sys.executable
     assert command[-4:] == ["--continue-train", "5", "--resume-learning-rate", "2e-05"]
+
+
+def test_build_resume_command_targets_an_explicit_checkpoint() -> None:
+    command = build_training_command("runtime.yaml", resume_checkpoint="runs/test/1/checkpoints/epoch_0010.pt")
+    assert command[-2:] == ["--resume", "runs/test/1/checkpoints/epoch_0010.pt"]
+
+
+def test_continue_training_writes_to_next_run_directory(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "configs" / "small.yaml"
+    category_dir = tmp_path / "runs" / "small"
+    source_run = category_dir / "1"
+    next_run = category_dir / "2"
+    latest = source_run / "checkpoints" / "epoch_0010.pt"
+    source_run.mkdir(parents=True)
+    next_run.mkdir()
+    base_config = {"experiment": {"output_dir": str(tmp_path / "runs")}}
+    saved_config = {
+        "experiment": {"output_dir": str(category_dir), "name": "1", "run_number": 1},
+        "training": {"epochs": 10, "learning_rate": 0.001},
+    }
+    checkpoint = {
+        "epoch": 10,
+        "global_step": 100,
+        "optimizer": {"param_groups": [{"lr": 0.0005}]},
+    }
+    captured = {}
+
+    monkeypatch.setattr(cli, "choose_config", lambda: config_path)
+    monkeypatch.setattr(cli, "load_config", lambda path: deepcopy(base_config if path == config_path else saved_config))
+    monkeypatch.setattr(cli, "category_directory", lambda *_: category_dir)
+    monkeypatch.setattr(cli, "choose_numbered_run", lambda _: source_run)
+    monkeypatch.setattr(cli, "find_latest_checkpoint", lambda _: latest)
+    monkeypatch.setattr(cli.torch, "load", lambda *_args, **_kwargs: checkpoint)
+    monkeypatch.setattr(cli, "ask_int", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(cli, "configure_runtime", lambda config, **_kwargs: config)
+    monkeypatch.setattr(cli, "ask_yes_no", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cli, "launch", lambda config, mode, **kwargs: captured.update(config=config, mode=mode, **kwargs))
+
+    continue_training()
+
+    assert captured["mode"] == "continue"
+    assert captured["source_run"] == source_run
+    assert captured["resume_checkpoint"] == latest
+    assert captured["config"]["experiment"]["name"] == "3"
+    assert captured["config"]["experiment"]["parent_run_number"] == 1
+    assert captured["config"]["training"]["epochs"] == 14
 
 
 def test_continue_summary_uses_runtime_learning_rate(capsys) -> None:

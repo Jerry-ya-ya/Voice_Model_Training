@@ -29,3 +29,5 @@
 ## 2026/09/26
 
 - Add persistent epoch timing with running averages and longest-epoch reporting to training.
+
+- Route every CLI training and continuation launch to a new numbered run directory.

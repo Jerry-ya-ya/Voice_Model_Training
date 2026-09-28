@@ -1,0 +1,14 @@
+services:
+  voice-training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4201:4000"
+    volumes:
+      - ./configs:/app/configs
+      - ./data:/app/data
+      - ./runs:/app/runs
+    environment:
+      PYTHONUNBUFFERED: "1"
+    stop_grace_period: 30s

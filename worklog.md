@@ -31,3 +31,7 @@
 - Add persistent epoch timing with running averages and longest-epoch reporting to training.
 
 - Route every CLI training and continuation launch to a new numbered run directory.
+
+## 2026/09/27
+
+- Add a containerized FastAPI training dashboard with CLI-equivalent controls, live job logs, and GPU support on port 4000.

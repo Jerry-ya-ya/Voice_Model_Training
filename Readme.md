@@ -114,6 +114,41 @@ Mel extraction, caching, splitting, and padding remain unchanged.
 
 ## Training
 
+### Web interface and container
+
+The browser interface mirrors the interactive CLI: it scans YAML configs,
+supports new and continued training, exposes the same runtime parameters,
+allocates a new positive run number for every launch, and streams the training
+process output. Only one training process can run at a time so two jobs cannot
+compete for the same GPU.
+
+Run it locally after installing the requirements:
+
+```powershell
+.venv\Scripts\python -m uvicorn webapp.app:app --host 0.0.0.0 --port 4000
+```
+
+Then open `http://localhost:4000`. Interactive API documentation is available
+at `http://localhost:4000/docs`.
+
+Build and start the CPU-compatible container:
+
+```powershell
+docker compose up --build
+```
+
+To expose all GPUs to the container, use the GPU override on a Docker host with
+GPU container support:
+
+```powershell
+docker compose -f compose.yaml -f compose.gpu.yaml up --build
+```
+
+Both variants publish the application on port `4000`. The Compose configuration
+bind-mounts `configs/`, `data/`, and `runs/`, so configs and training artifacts
+remain on the host after the container stops. The Web API has no authentication;
+keep it on a trusted local network unless authentication is added separately.
+
 ### Interactive CLI menu
 
 The easiest way to start or continue training is the arrow-key menu:

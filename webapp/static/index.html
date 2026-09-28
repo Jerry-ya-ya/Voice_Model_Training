@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Voice Model Training 的瀏覽器訓練控制台" />
+    <title>Voice Model Training</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Voice Model Training 首頁">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i>
+        </span>
+        <span>
+          <strong>Voice Model</strong>
+          <small>Training console</small>
+        </span>
+      </a>
+      <div class="health-pill" id="health-pill">
+        <span class="health-dot"></span>
+        <span id="health-text">正在連線</span>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">TTS WORKSPACE · PORT 4000</p>
+          <h1>用清楚的步驟，<br /><em>開始下一次聲音訓練。</em></h1>
+        </div>
+        <p class="hero-copy">
+          掃描現有 YAML、分配下一個訓練編號，並在同一頁追蹤 epoch、耗時與輸出紀錄。
+          所有設定都沿用 CLI 的流程。
+        </p>
+      </section>
+
+      <section class="workspace">
+        <div class="control-panel">
+          <div class="mode-switch" role="tablist" aria-label="訓練模式">
+            <button class="mode-button active" id="mode-new" type="button" role="tab" aria-selected="true">
+              <span>01</span>全新訓練
+            </button>
+            <button class="mode-button" id="mode-continue" type="button" role="tab" aria-selected="false">
+              <span>02</span>再次訓練
+            </button>
+          </div>
+
+          <form id="training-form">
+            <section class="form-section">
+              <div class="section-heading">
+                <div><span class="step">STEP 01</span><h2>選擇模型規格</h2></div>
+                <span class="next-run" id="next-run">下一次：—</span>
+              </div>
+              <label class="field field-wide">
+                <span>Config 設定檔</span>
+                <select id="config-name" required></select>
+                <small id="config-meta">正在掃描 configs…</small>
+              </label>
+              <div class="continue-only hidden" id="continue-source-wrap">
+                <label class="field field-wide">
+                  <span>接續來源</span>
+                  <select id="source-run"></select>
+                  <small id="source-meta">請先選擇有 checkpoint 的訓練。</small>
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <div class="section-heading">
+                <div><span class="step">STEP 02</span><h2>執行環境</h2></div>
+              </div>
+              <div class="field-grid three">
+                <label class="field">
+                  <span>運算裝置</span>
+                  <select id="device">
+                    <option value="auto">自動選擇</option>
+                    <option value="cuda">CUDA GPU</option>
+                    <option value="cpu">CPU</option>
+                  </select>
+                </label>
+                <label class="field"><span>Batch size</span><input id="batch-size" type="number" min="1" required /></label>
+                <label class="field"><span>DataLoader workers</span><input id="num-workers" type="number" min="0" required /></label>
+              </div>
+              <label class="field field-wide">
+                <span>資料集路徑</span>
+                <input id="dataset-root" type="text" required />
+              </label>
+            </section>
+
+            <section class="form-section">
+              <div class="section-heading">
+                <div><span class="step">STEP 03</span><h2>訓練參數</h2></div>
+              </div>
+              <div class="field-grid three">
+                <label class="field new-only"><span>訓練 Epochs</span><input id="epochs" type="number" min="1" /></label>
+                <label class="field continue-only hidden"><span>追加 Epochs</span><input id="additional-epochs" type="number" min="1" value="10" /></label>
+                <label class="field new-only"><span>Learning rate</span><input id="learning-rate" type="number" min="0" step="any" /></label>
+                <label class="field"><span>Random seed</span><input id="seed" type="number" min="0" required /></label>
+                <label class="field"><span>Max steps / epoch</span><input id="max-steps" type="number" min="1" placeholder="不限制" /></label>
+                <label class="field"><span>最多資料筆數</span><input id="max-items" type="number" min="1" placeholder="全部" /></label>
+                <label class="field"><span>Checkpoint 間隔</span><input id="checkpoint-every" type="number" min="1" required /></label>
+                <label class="field"><span>樣本產生間隔</span><input id="sample-every" type="number" min="1" required /></label>
+              </div>
+              <label class="check-row continue-only hidden">
+                <input id="reset-learning-rate" type="checkbox" />
+                <span>
+                  <strong>重設 learning rate</strong>
+                  <small>未勾選時保留來源 checkpoint 的 learning rate。</small>
+                </span>
+              </label>
+              <label class="field continue-only hidden" id="continue-lr-wrap">
+                <span>新的 Learning rate</span>
+                <input id="continue-learning-rate" type="number" min="0" step="any" disabled />
+              </label>
+            </section>
+
+            <div class="launch-row">
+              <div>
+                <small>輸出位置</small>
+                <strong id="output-preview">runs/—/—</strong>
+              </div>
+              <button class="launch-button" id="launch-button" type="submit">
+                <span id="launch-label">開始全新訓練</span><b>→</b>
+              </button>
+            </div>
+            <p class="form-error hidden" id="form-error" role="alert"></p>
+          </form>
+        </div>
+
+        <aside class="activity-panel">
+          <div class="activity-header">
+            <div><span class="step">LIVE OUTPUT</span><h2>訓練狀態</h2></div>
+            <span class="status-badge idle" id="job-status">IDLE</span>
+          </div>
+          <div class="job-summary" id="job-summary">
+            <div><small>模式</small><strong>尚未啟動</strong></div>
+            <div><small>輸出編號</small><strong>—</strong></div>
+          </div>
+          <pre class="terminal" id="terminal" aria-live="polite"><code><span class="terminal-muted">$ 等待訓練工作…</span></code></pre>
+          <div class="activity-actions">
+            <button class="ghost-button" id="refresh-jobs" type="button">重新整理</button>
+            <button class="danger-button hidden" id="stop-job" type="button">停止訓練</button>
+          </div>
+          <div class="recent-jobs">
+            <h3>最近工作</h3>
+            <div id="recent-jobs-list" class="recent-list">
+              <p class="empty-state">目前沒有工作紀錄。</p>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

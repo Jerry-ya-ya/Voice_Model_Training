@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "4201:4000"
+    gpus: all
     volumes:
       - ./configs:/app/configs
       - ./data:/app/data
       - ./runs:/app/runs
     environment:
       PYTHONUNBUFFERED: "1"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     stop_grace_period: 30s

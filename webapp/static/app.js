@@ -4,6 +4,7 @@ const state = {
   runs: [],
   currentJobId: null,
   pollTimer: null,
+  cudaAvailable: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -45,6 +46,7 @@ function applyDefaults(config) {
   const defaults = config.defaults;
   $("config-meta").textContent = `${config.label} · 下一個輸出編號 ${config.next_run_number}`;
   $("device").value = defaults.device;
+  applyCudaAvailability();
   $("batch-size").value = defaults.batch_size;
   $("num-workers").value = defaults.num_workers;
   $("dataset-root").value = defaults.dataset_root;
@@ -58,6 +60,15 @@ function applyDefaults(config) {
   $("next-run").textContent = `下一次：#${config.next_run_number}`;
   updateOutputPreview();
   if (state.mode === "continue") loadRuns();
+}
+
+function applyCudaAvailability() {
+  const select = $("device");
+  const cudaOption = select.querySelector('option[value="cuda"]');
+  if (!cudaOption || state.cudaAvailable === null) return;
+  cudaOption.disabled = !state.cudaAvailable;
+  cudaOption.textContent = state.cudaAvailable ? "CUDA GPU" : "CUDA GPU（容器未偵測到）";
+  if (!state.cudaAvailable && select.value === "cuda") select.value = "auto";
 }
 
 function updateOutputPreview() {
@@ -248,8 +259,12 @@ function hideError() { $("form-error").classList.add("hidden"); }
 async function checkHealth() {
   try {
     const health = await api("/api/health");
+    state.cudaAvailable = health.cuda_available;
+    applyCudaAvailability();
     $("health-pill").classList.add("online");
-    $("health-text").textContent = health.cuda_available ? "API ONLINE · CUDA READY" : "API ONLINE · CPU";
+    $("health-text").textContent = health.cuda_available
+      ? `CUDA READY · ${health.cuda_device_name}`
+      : "API ONLINE · CUDA UNAVAILABLE";
   } catch (_) {
     $("health-pill").classList.add("offline");
     $("health-text").textContent = "API OFFLINE";

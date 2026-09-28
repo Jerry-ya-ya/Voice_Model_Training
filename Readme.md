@@ -131,20 +131,25 @@ Run it locally after installing the requirements:
 Then open `http://localhost:4000`. Interactive API documentation is available
 at `http://localhost:4000/docs`.
 
-Build and start the CPU-compatible container:
+Build and start the GPU-enabled container:
 
 ```powershell
 docker compose up --build
 ```
 
-To expose all GPUs to the container, use the GPU override on a Docker host with
-GPU container support:
+The default Compose service requests all available GPUs and passes CUDA compute
+and utility capabilities into the container. Confirm the connection after it
+starts:
 
 ```powershell
-docker compose -f compose.yaml -f compose.gpu.yaml up --build
+Invoke-RestMethod http://localhost:4201/api/health
 ```
 
-Both variants publish the application on port `4000`. The Compose configuration
+`cuda_available` must be `true` before choosing CUDA in the browser. If an older
+container is still running, recreate it with `docker compose down` followed by
+`docker compose up --build`; restarting the old container does not apply the new
+GPU device request. The service listens on port `4000` inside the container and
+is published as `http://localhost:4201` on the host. The Compose configuration
 bind-mounts `configs/`, `data/`, and `runs/`, so configs and training artifacts
 remain on the host after the container stops. The Web API has no authentication;
 keep it on a trusted local network unless authentication is added separately.

@@ -247,6 +247,19 @@ def _load_checkpoint_summary(checkpoint_path: Path) -> tuple[dict, float]:
     return checkpoint, learning_rate
 
 
+def _validate_requested_device(config: dict) -> None:
+    requested = str(config["training"].get("device", "auto"))
+    if requested == "cuda" and not torch.cuda.is_available():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "容器目前看不到 CUDA GPU，無法使用 CUDA 訓練。請確認 compose.yaml 含有 `gpus: all`，"
+                "執行 `docker compose down` 後再用 `docker compose up --build` 重建；"
+                "若只想先用 CPU，請將運算裝置改為 Auto 或 CPU。"
+            ),
+        )
+
+
 jobs = JobManager()
 app = FastAPI(title="Voice Model Training", version="1.0.0")
 app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
@@ -259,7 +272,15 @@ def index() -> Path:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "port": 4000, "cuda_available": torch.cuda.is_available()}
+    cuda_available = torch.cuda.is_available()
+    return {
+        "status": "ok",
+        "port": 4000,
+        "cuda_available": cuda_available,
+        "cuda_device_count": torch.cuda.device_count() if cuda_available else 0,
+        "cuda_device_name": torch.cuda.get_device_name(0) if cuda_available else None,
+        "torch_cuda_version": torch.version.cuda,
+    }
 
 
 @app.get("/api/configs")
@@ -307,6 +328,7 @@ def start_new_training(request: NewTrainingRequest) -> dict:
         config["training"]["epochs"] = request.epochs
     if request.learning_rate is not None:
         config["training"]["learning_rate"] = request.learning_rate
+    _validate_requested_device(config)
     launch_config = save_launch_config(config, "web_new")
     run_dir = category_dir / str(run_number)
     command = build_training_command(launch_config)
@@ -342,6 +364,7 @@ def start_continued_training(request: ContinueTrainingRequest) -> dict:
     config["experiment"]["resume_checkpoint"] = str(latest)
     config["training"]["epochs"] = int(checkpoint["epoch"]) + request.additional_epochs
     config["training"]["learning_rate"] = request.learning_rate or restored_learning_rate
+    _validate_requested_device(config)
     launch_config = save_launch_config(config, "web_continue")
     run_dir = category_dir / str(destination_number)
     command = build_training_command(

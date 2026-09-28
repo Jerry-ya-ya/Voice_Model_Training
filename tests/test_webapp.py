@@ -6,6 +6,7 @@ from pathlib import Path
 
 import cli
 import torch
+import yaml
 from fastapi.testclient import TestClient
 
 import webapp.app as web
@@ -70,6 +71,16 @@ def test_health_and_frontend_are_served() -> None:
     assert "Voice Model Training" in page.text
 
 
+def test_default_compose_exposes_all_gpus() -> None:
+    with (web.PROJECT_ROOT / "compose.yaml").open(encoding="utf-8") as handle:
+        compose = yaml.safe_load(handle)
+
+    service = compose["services"]["voice-training"]
+    assert service["gpus"] == "all"
+    assert service["environment"]["NVIDIA_VISIBLE_DEVICES"] == "all"
+    assert service["environment"]["NVIDIA_DRIVER_CAPABILITIES"] == "compute,utility"
+
+
 def test_new_training_uses_next_numbered_run(tmp_path: Path, monkeypatch) -> None:
     configure_temporary_project(tmp_path, monkeypatch)
     (tmp_path / "runs" / "small" / "1").mkdir(parents=True)
@@ -92,6 +103,26 @@ def test_new_training_uses_next_numbered_run(tmp_path: Path, monkeypatch) -> Non
     assert response.json()["run_number"] == 2
     assert captured["run_dir"] == tmp_path / "runs" / "small" / "2"
     assert (captured["run_dir"] / "launch_configs").is_dir()
+
+
+def test_cuda_training_is_rejected_before_launch_when_gpu_is_unavailable(tmp_path: Path, monkeypatch) -> None:
+    configure_temporary_project(tmp_path, monkeypatch)
+    monkeypatch.setattr(web.torch.cuda, "is_available", lambda: False)
+
+    response = TestClient(web.app).post(
+        "/api/train/new",
+        json={
+            "config_name": "small.yaml",
+            "device": "cuda",
+            "batch_size": 1,
+            "epochs": 2,
+            "learning_rate": 0.0003,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "gpus: all" in response.json()["detail"]
+    assert not (tmp_path / "runs" / "small" / "1" / "launch_configs").exists()
 
 
 def test_continued_training_reads_source_and_writes_next_run(tmp_path: Path, monkeypatch) -> None:

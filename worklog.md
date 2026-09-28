@@ -35,3 +35,7 @@
 ## 2026/09/27
 
 - Add a containerized FastAPI training dashboard with CLI-equivalent controls, live job logs, and GPU support on port 4000.
+
+## 2026/09/28
+
+- Enable GPU access by default in Docker Compose and prevent unavailable CUDA training from the web interface.
